@@ -132,15 +132,21 @@ def render_analytics_view(sim: SimulationService):
             st.markdown("##### Standard CSP Matching (MRV + Forward Checking)")
             st.caption("Finds a valid assignment satisfying all rules. Stops at the first complete leaf.")
             st.write(f"Search states checked: **{cmp_data['csp_nodes_explored']}**")
-            for inc_id, t_id in cmp_data["csp_assignments"].items():
-                st.markdown(f"• Request `{inc_id}` $\\to$ Team `{t_id}`")
+            if cmp_data["csp_assignments"]:
+                csp_rows = [{"Request": inc_id, "Assigned Team": t_id} for inc_id, t_id in cmp_data["csp_assignments"].items()]
+                st.dataframe(pd.DataFrame(csp_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("No assignments found.")
 
         with c_opt:
             st.markdown("##### Branch-and-Bound Cost Optimization")
             st.caption("Searches across valid combinations to minimize total kilometers driven.")
             st.write(f"Search states checked: **{cmp_data['opt_nodes_explored']}** | Subtrees safely pruned: **{cmp_data['opt_branches_pruned']}**")
-            for inc_id, t_id in cmp_data["opt_assignments"].items():
-                st.markdown(f"• Request `{inc_id}` $\\to$ Team `{t_id}`")
+            if cmp_data["opt_assignments"]:
+                opt_rows = [{"Request": inc_id, "Assigned Team": t_id} for inc_id, t_id in cmp_data["opt_assignments"].items()]
+                st.dataframe(pd.DataFrame(opt_rows), use_container_width=True, hide_index=True)
+            else:
+                st.info("No assignments found.")
 
         with st.expander("Why does Branch-and-Bound save kilometers?", expanded=False):
             st.markdown("""

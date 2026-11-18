@@ -41,7 +41,17 @@ def render_dispatch_view(sim: SimulationService):
                     use_optimization=use_opt,
                     routing_algo=routing_choice,
                 )
-                st.success(f"Plan {plan.plan_id} generated successfully!")
+                if len(plan.assignments) > 0:
+                    st.toast(f"Plan {plan.plan_id} generated successfully!")
+                    st.session_state["plan_success"] = f"Plan {plan.plan_id} generated: {len(plan.assignments)} teams deployed."
+                else:
+                    reason = "No suitable team available."
+                    if plan.unassigned_incidents:
+                        reason = next(iter(plan.unassigned_incidents.values()))
+                    elif plan.explanations:
+                        reason = plan.explanations[0]
+                    st.toast(f"Plan generated but no assignments could be made: {reason}")
+                    st.session_state["plan_alert"] = f"Plan generated but no assignments could be made: {reason}"
                 st.rerun()
 
     st.markdown("---")

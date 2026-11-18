@@ -37,7 +37,17 @@ def render_rescue_operations_view(sim: SimulationService):
                 use_optimization=use_opt,
                 routing_algo=routing_algo,
             )
-            st.success(f"Rescue plan updated! {len(plan.assignments)} teams deployed.")
+            if len(plan.assignments) > 0:
+                st.toast(f"Rescue plan updated! {len(plan.assignments)} teams deployed.")
+                st.session_state["plan_success"] = f"Rescue plan updated! {len(plan.assignments)} teams deployed."
+            else:
+                reason = "No suitable team available."
+                if plan.unassigned_incidents:
+                    reason = next(iter(plan.unassigned_incidents.values()))
+                elif plan.explanations:
+                    reason = plan.explanations[0]
+                st.toast(f"Plan generated but no assignments could be made: {reason}")
+                st.session_state["plan_alert"] = f"Plan generated but no assignments could be made: {reason}"
             st.rerun()
     with col_act4:
         st.write("")
@@ -286,7 +296,8 @@ def render_rescue_operations_view(sim: SimulationService):
 
             if "nl_draft_ops" in st.session_state:
                 draft = st.session_state["nl_draft_ops"]
-                st.markdown("###### Review & Confirm Draft")
+                conf_pct = int(draft.get("confidence", 0.85) * 100)
+                st.markdown(f"###### Review & Confirm Draft *(Parser Confidence: {conf_pct}%)*")
                 d_c1, d_c2 = st.columns(2)
                 with d_c1:
                     d_title = st.text_input("Title", value=draft["title"])
@@ -337,6 +348,13 @@ def render_rescue_operations_view(sim: SimulationService):
 
         with col_fl2:
             st.markdown("##### Road Conditions & Disruption Controls")
+            if "road_message" in st.session_state:
+                r_msg, r_unaffected = st.session_state.pop("road_message")
+                if r_unaffected:
+                    st.info(r_msg)
+                else:
+                    st.success(r_msg)
+
             st.caption("Simulate road closures or congestion to test how the system recalculates detours.")
 
             all_roads = sim.routing_service.get_all_edges()
@@ -350,16 +368,45 @@ def render_rescue_operations_view(sim: SimulationService):
             with r_act1:
                 if target_edge.is_open:
                     if st.button("Block This Road", type="primary", use_container_width=True):
+                        old_cost = sim.dispatch_service.current_plan.total_cost if sim.dispatch_service.current_plan else 0.0
                         sim.routing_service.block_road(target_edge.start_node, target_edge.end_node)
                         notes = sim.dispatch_service.replan_disrupted_routes(target_edge.start_node, target_edge.end_node)
-                        st.warning(f"Road closed between {target_edge.start_node} and {target_edge.end_node}!")
-                        for n in notes:
-                            st.info(n)
+                        new_cost = sim.dispatch_service.current_plan.total_cost if sim.dispatch_service.current_plan else 0.0
+                        if abs(new_cost - old_cost) > 1e-4:
+                            msg = f"Road closed ({target_edge.start_node} <-> {target_edge.end_node}). Plan updated: total distance changed from {old_cost:.1f} km to {new_cost:.1f} km."
+                            st.session_state["road_message"] = (msg, False)
+                        else:
+                            msg = f"Road closed ({target_edge.start_node} <-> {target_edge.end_node}). Active rescue plan is unaffected ({new_cost:.1f} km)."
+                            st.session_state["road_message"] = (msg, True)
+                        st.toast(msg)
                         st.rerun()
                 else:
                     if st.button("Reopen Road", use_container_width=True):
+                        old_cost = sim.dispatch_service.current_plan.total_cost if sim.dispatch_service.current_plan else 0.0
                         sim.routing_service.unblock_road(target_edge.start_node, target_edge.end_node)
-                        st.success(f"Road reopened!")
+                        if sim.dispatch_service.current_plan:
+                            for asgn in sim.dispatch_service.current_plan.assignments:
+                                inc = sim.incident_service.get_incident(asgn.incident_id)
+                                team = sim.dispatch_service.get_team(asgn.team_id)
+                                if inc and team:
+                                    algo = asgn.route.algorithm_name if asgn.route else sim.dispatch_service.routing_algorithm
+                                    new_route = sim.routing_service.calculate_route(team.current_location_id, inc.location_id, algo)
+                                    if new_route.success and (asgn.route is None or new_route.cost < asgn.route.cost):
+                                        asgn.route = new_route
+                                        asgn.cost = new_route.cost
+                                        inc.estimated_cost = new_route.cost
+                                        inc.estimated_time = new_route.travel_time
+                            sim.dispatch_service.current_plan.total_cost = round(
+                                sum(a.cost for a in sim.dispatch_service.current_plan.assignments if a.route and a.route.success), 2
+                            )
+                        new_cost = sim.dispatch_service.current_plan.total_cost if sim.dispatch_service.current_plan else 0.0
+                        if abs(new_cost - old_cost) > 1e-4:
+                            msg = f"Road reopened ({target_edge.start_node} <-> {target_edge.end_node}). Plan updated: total distance changed from {old_cost:.1f} km to {new_cost:.1f} km."
+                            st.session_state["road_message"] = (msg, False)
+                        else:
+                            msg = f"Road reopened ({target_edge.start_node} <-> {target_edge.end_node}). Active rescue plan is unaffected ({new_cost:.1f} km)."
+                            st.session_state["road_message"] = (msg, True)
+                        st.toast(msg)
                         st.rerun()
 
             with r_act2:

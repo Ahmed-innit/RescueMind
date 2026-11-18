@@ -196,8 +196,18 @@ def main():
         st.markdown("<div style='font-size: 12px; font-weight: 600; color: #64748B; margin-bottom: 8px;'>QUICK ACTIONS</div>", unsafe_allow_html=True)
 
         if st.button("Update Rescue Plan", type="primary", use_container_width=True):
-            sim.dispatch_service.run_dispatch_cycle()
-            st.toast("Rescue plan calculated and deployed.")
+            plan = sim.dispatch_service.run_dispatch_cycle()
+            if len(plan.assignments) > 0:
+                st.toast(f"Rescue plan calculated: {len(plan.assignments)} teams deployed.")
+                st.session_state["plan_success"] = f"Rescue plan calculated: {len(plan.assignments)} teams deployed."
+            else:
+                reason = "No suitable team available."
+                if plan.unassigned_incidents:
+                    reason = next(iter(plan.unassigned_incidents.values()))
+                elif plan.explanations:
+                    reason = plan.explanations[0]
+                st.toast(f"Plan generated but no assignments could be made: {reason}")
+                st.session_state["plan_alert"] = f"Plan generated but no assignments could be made: {reason}"
             st.rerun()
 
         if st.button("Advance Clock (+15m)", use_container_width=True):
@@ -212,6 +222,12 @@ def main():
             Islamabad – Rawalpindi Network
         </div>
         """, unsafe_allow_html=True)
+
+    # Alerts display
+    if "plan_alert" in st.session_state:
+        st.warning(st.session_state.pop("plan_alert"))
+    if "plan_success" in st.session_state:
+        st.success(st.session_state.pop("plan_success"))
 
     # 4-Section Page Routing
     if menu == "Overview":

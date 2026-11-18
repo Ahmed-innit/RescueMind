@@ -72,7 +72,17 @@ def render_dashboard_view(sim: SimulationService):
         with c_act1:
             if st.button("Generate Rescue Plan", type="primary", use_container_width=True):
                 plan = sim.dispatch_service.run_dispatch_cycle()
-                st.success(f"Rescue plan updated: {len(plan.assignments)} teams deployed.")
+                if len(plan.assignments) > 0:
+                    st.toast(f"Rescue plan updated: {len(plan.assignments)} teams deployed.")
+                    st.session_state["plan_success"] = f"Rescue plan updated: {len(plan.assignments)} teams deployed."
+                else:
+                    reason = "No suitable team available."
+                    if plan.unassigned_incidents:
+                        reason = next(iter(plan.unassigned_incidents.values()))
+                    elif plan.explanations:
+                        reason = plan.explanations[0]
+                    st.toast(f"Plan generated but no assignments could be made: {reason}")
+                    st.session_state["plan_alert"] = f"Plan generated but no assignments could be made: {reason}"
                 st.rerun()
         with c_act2:
             if st.button("Advance Clock (+15m)", use_container_width=True):

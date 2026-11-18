@@ -49,6 +49,7 @@ class SimulationService:
         """Advance simulation clock, increment waiting times for unassigned cases, and reprioritize."""
         self.simulation_time_minutes += delta_minutes
         self.incident_service.advance_waiting_time(delta_minutes)
+        self.incident_service.recompute_priorities()
 
     def load_scenario(self, scenario_id: str):
         """Apply a predefined scenario state."""
@@ -78,6 +79,7 @@ class SimulationService:
         self.incident_service.reset_to_initial()
         self.routing_service.reset_to_initial()
         self.dispatch_service.reset_to_initial()
+        self.dispatch_service.run_dispatch_cycle()
 
     def parse_natural_language_report(self, text: str) -> Dict[str, Any]:
         """Optional rule-based natural language incident intake assistant.

@@ -71,12 +71,20 @@ class MetricsService:
 
     def compare_csp_vs_optimization(self) -> Dict[str, Any]:
         """Compare basic CSP feasible solution against Branch-and-Bound optimal solution."""
-        active = self.incident_service.get_active_incidents()[:self.dispatch_service.planning_horizon]
-        teams = self.dispatch_service.get_all_teams()
-        graph = self.routing_service.graph
-
+        import copy
         from rescuemind.algorithms.assignment import RescueTeamCSP
         from rescuemind.algorithms.optimization import BranchAndBoundAssigner
+        from rescuemind.models.rescue_team import TeamStatus
+
+        ranked = self.incident_service.recompute_priorities()
+        active = copy.deepcopy(ranked[:self.dispatch_service.planning_horizon])
+        teams = copy.deepcopy(self.dispatch_service.get_all_teams())
+        for t in teams:
+            t.current_assignments.clear()
+            if t.status == TeamStatus.DISPATCHED:
+                t.status = TeamStatus.AVAILABLE
+
+        graph = self.routing_service.graph
 
         csp = RescueTeamCSP(active, teams, graph)
         csp_res = csp.solve([i.incident_id for i in active])
@@ -85,25 +93,29 @@ class MetricsService:
         csp_cost = 0.0
         for inc_id, t_id in csp_res.assignment.items():
             inc = self.incident_service.get_incident(inc_id)
-            team = self.dispatch_service.get_team(t_id)
+            team = next((tm for tm in teams if tm.team_id == t_id), None)
             if inc and team:
                 route = self.routing_service.calculate_route(team.current_location_id, inc.location_id, "A*")
                 if route.success:
                     csp_cost += route.cost
 
-        optimizer = BranchAndBoundAssigner(active, teams, graph)
+        # Optimize the feasible candidate subset using Branch-and-Bound
+        assigned_incidents = [inc for inc in active if inc.incident_id in csp_res.assignment]
+        teams_for_opt = copy.deepcopy(teams)
+        optimizer = BranchAndBoundAssigner(assigned_incidents, teams_for_opt, graph)
         opt_res = optimizer.solve()
 
         savings = round(csp_cost - opt_res.total_cost, 2) if opt_res.is_feasible else 0.0
+        is_feasible = bool(csp_res.assignment) and opt_res.is_feasible
 
         return {
-            "csp_feasible": csp_res.is_feasible,
+            "csp_feasible": is_feasible,
             "csp_assignments": csp_res.assignment,
             "csp_total_cost": round(csp_cost, 2),
             "csp_nodes_explored": csp_res.nodes_explored,
             "opt_feasible": opt_res.is_feasible,
-            "opt_assignments": opt_res.assignment,
-            "opt_total_cost": opt_res.total_cost,
+            "opt_assignments": opt_res.assignment if opt_res.is_feasible else {},
+            "opt_total_cost": opt_res.total_cost if opt_res.is_feasible else 0.0,
             "opt_nodes_explored": opt_res.nodes_explored,
             "opt_branches_pruned": opt_res.branches_pruned,
             "cost_reduction_km": max(0.0, savings),

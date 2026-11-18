@@ -115,6 +115,10 @@ def render_settings_view(sim: SimulationService):
         st.markdown("#### Priority Queue Weighting Policy")
         st.caption("Adjust how the system balances medical urgency, waiting duration, and special vulnerability.")
 
+        if "weights_saved" in st.session_state:
+            st.success("Priority weights saved! Request queue recomputed.")
+            del st.session_state["weights_saved"]
+
         current_w = sim.incident_service.priority_weights
         c_w1, c_w2, c_w3 = st.columns(3)
         with c_w1:
@@ -131,8 +135,26 @@ def render_settings_view(sim: SimulationService):
                 weight_vulnerability=w_vuln,
             )
             sim.incident_service.set_priority_weights(new_weights)
-            st.success("Priority weights saved! All requests in queue have been recalculated.")
+            st.toast("Priority weights saved! Request queue recomputed.")
+            st.session_state["weights_saved"] = True
             st.rerun()
+
+        st.markdown("---")
+        st.markdown("##### Current Recomputed Queue Order")
+        ranked = sim.incident_service.recompute_priorities()
+        q_rows = []
+        for rank, inc in enumerate(ranked, start=1):
+            q_rows.append({
+                "Rank": rank,
+                "Request ID": inc.incident_id,
+                "Title": inc.title,
+                "Urgency": inc.urgency,
+                "Waiting (min)": f"{inc.waiting_time:.0f}",
+                "Vulnerable": "Yes" if inc.is_vulnerable else "No",
+                "Priority Score": f"{inc.priority_score:.2f}",
+                "Status": inc.status.value.capitalize(),
+            })
+        st.dataframe(pd.DataFrame(q_rows), use_container_width=True, hide_index=True)
 
     # TAB 4: RESPONSIBLE AI & ETHICS
     with tab_ethics:

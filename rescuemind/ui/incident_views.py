@@ -201,9 +201,10 @@ def render_incidents_view(sim: SimulationService):
 
         if "nl_draft" in st.session_state:
             draft = st.session_state["nl_draft"]
+            conf_pct = int(draft.get("confidence", 0.85) * 100)
             st.markdown("---")
-            st.markdown("###### Operator Review & Confirmation (Human-in-the-Loop)")
-            st.info("AI extraction suggestions are populated below. You can adjust any field before submitting.")
+            st.markdown(f"###### Operator Review & Confirmation (Human-in-the-Loop) — Parser Confidence: {conf_pct}%")
+            st.info(f"AI extraction suggestions are populated below (Parser Confidence: {conf_pct}%). You can adjust any field before submitting.")
 
             ec1, ec2 = st.columns(2)
             with ec1:

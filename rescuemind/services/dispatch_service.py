@@ -108,6 +108,12 @@ class DispatchService:
         if self.current_plan:
             self.previous_plan = copy.deepcopy(self.current_plan)
 
+        # Clear existing simulated active assignments from teams before planning
+        for t in self.teams.values():
+            t.current_assignments.clear()
+            if t.status == TeamStatus.DISPATCHED:
+                t.status = TeamStatus.AVAILABLE
+
         assignments_list: List[DispatchAssignment] = []
         unassigned_map: Dict[str, str] = {}
         explanations: List[str] = []
@@ -129,15 +135,23 @@ class DispatchService:
 
         # 2. Assignment via Branch-and-Bound or CSP
         if use_optimization:
-            optimizer = BranchAndBoundAssigner(
+            csp = RescueTeamCSP(
                 incidents=target_incidents,
                 teams=list(self.teams.values()),
                 graph=self.routing_service.graph,
             )
+            csp_result = csp.solve([inc.incident_id for inc in target_incidents])
+            unassigned_map.update(csp_result.unassigned)
+            assigned_incidents = [inc for inc in target_incidents if inc.incident_id in csp_result.assignment]
+            optimizer = BranchAndBoundAssigner(
+                incidents=assigned_incidents,
+                teams=list(self.teams.values()),
+                graph=self.routing_service.graph,
+            )
             opt_result = optimizer.solve()
-            assigned_pairs = opt_result.assignment
+            assigned_pairs = opt_result.assignment if opt_result.is_feasible else csp_result.assignment
             algorithm_label = "Branch-and-Bound Optimization"
-            explanations.append(opt_result.explanation)
+            explanations.append(opt_result.explanation if opt_result.is_feasible else csp_result.explanation)
         else:
             csp = RescueTeamCSP(
                 incidents=target_incidents,
@@ -149,12 +163,6 @@ class DispatchService:
             unassigned_map.update(csp_result.unassigned)
             algorithm_label = "CSP Backtracking with MRV & Forward Checking"
             explanations.append(csp_result.explanation)
-
-        # Clear existing simulated active assignments from teams before applying new plan
-        for t in self.teams.values():
-            t.current_assignments.clear()
-            if t.status == TeamStatus.DISPATCHED:
-                t.status = TeamStatus.AVAILABLE
 
         # 3. Process assigned incidents
         for inc_id, team_id in assigned_pairs.items():

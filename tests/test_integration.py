@@ -73,3 +73,18 @@ def test_road_blockage_and_route_replanning(sim):
     assert len(replan_notes) >= 1
     # Check that route was updated
     assert not sim.routing_service.route_contains_edge(chosen_assignment.route.path, u, v)
+
+
+def test_advance_time_then_dispatch_cycle_non_empty(sim):
+    # Initial plan
+    plan1 = sim.dispatch_service.run_dispatch_cycle()
+    assert len(plan1.assignments) > 0
+
+    # Advance time by 15 minutes
+    sim.advance_time(15.0)
+
+    # First subsequent dispatch cycle must immediately produce a non-empty plan
+    plan2 = sim.dispatch_service.run_dispatch_cycle()
+    assert plan2 is not None
+    assert len(plan2.assignments) > 0
+    assert plan2.total_cost > 0.0
